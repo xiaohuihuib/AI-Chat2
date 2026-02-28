@@ -230,8 +230,28 @@ class TTHSDownloader:
         """
         def _inner(event_ptr: ctypes.c_char_p, msg_ptr: ctypes.c_char_p):
             try:
-                event_str = event_ptr.value.decode("utf-8") if event_ptr else "{}" # pyright: ignore[reportOptionalMemberAccess]
-                msg_str = msg_ptr.value.decode("utf-8") if msg_ptr else "{}" # pyright: ignore[reportOptionalMemberAccess]
+                # 处理event_ptr
+                if event_ptr:
+                    if hasattr(event_ptr, 'value'):
+                        # 对于ctypes.c_char_p类型
+                        event_str = event_ptr.value.decode("utf-8")
+                    else:
+                        # 对于bytes类型
+                        event_str = event_ptr.decode("utf-8")
+                else:
+                    event_str = "{}"
+                
+                # 处理msg_ptr
+                if msg_ptr:
+                    if hasattr(msg_ptr, 'value'):
+                        # 对于ctypes.c_char_p类型
+                        msg_str = msg_ptr.value.decode("utf-8")
+                    else:
+                        # 对于bytes类型
+                        msg_str = msg_ptr.decode("utf-8")
+                else:
+                    msg_str = "{}"
+                
                 event_dict = json.loads(event_str)
                 msg_dict = json.loads(msg_str)
                 user_callback(event_dict, msg_dict)

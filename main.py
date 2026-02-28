@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Chat2 - 智能对话聊天程序
-版本: 2.0.0
+版本: 2.0.1
 功能: 基于pywebview和Flask的单文件可执行聊天应用
 """
 import os
@@ -10,7 +10,7 @@ import threading
 import time
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Literal, TypedDict
 
 # 打印Python路径
 print(f"Python路径: {sys.path}")
@@ -23,7 +23,7 @@ from openai import OpenAI
 from openai import OpenAIError, RateLimitError, AuthenticationError
 
 # 应用配置
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 APP_NAME = "AI-Chat2"
 
 # 数据目录设置
@@ -131,6 +131,61 @@ conversation_data = load_conversations()
 conversations = conversation_data['conversations']
 conversation_titles = conversation_data['conversation_titles']
 
+# 事件字典类型定义
+class Event(TypedDict):
+    Type: Literal['start', 'startOne', 'update', 'end', 'endOne', 'msg', 'err']
+    Name: str
+    ShowName: str
+    ID: str
+
+def callback_func(event_dict: Event, msg_dict: dict[str, str | int | float]):
+    # 处理不同类型的事件消息
+    event_type: Literal['start', 'startOne', 'update', 'end', 'endOne', 'msg', 'err'] = event_dict.get('Type', '')
+    event_name: str = event_dict.get('Name', '')  # 事件名称
+    event_showname: str = event_dict.get('ShowName', '')  # 事件显示名称
+    event_id: str = event_dict.get('ID', '')  # 事件会话/实例ID
+    if event_type == 'update':  # 更新类型事件
+        total: int = msg_dict.get('Total', 0)  # 待下载总字节数
+        downloaded: int = msg_dict.get('Downloaded', 0)  # 已下载字节数
+
+        # 更新进度显示
+        # 注意：Speed 字段已在 TTHSD 内核中移除，需自行计算
+        if total > 0:
+            percent = (downloaded / total) * 100
+            print(f"{event_showname}（{event_id}）：{downloaded}/{total} 字节 ({percent:.2f}%)", end='\r', flush=True)
+
+    elif event_type == 'startOne':  # 单个文件开始下载事件
+        url: str = msg_dict.get('URL', '')  # 下载URL地址
+        task_id: str = event_dict.get('ID', '')  # 任务标识符（从 event 获取）
+        index: int = msg_dict.get('Index', 0)  # 任务索引编号
+        total_tasks: int = msg_dict.get('Total', 0)  # 总任务数量
+        print(f"\n{event_showname}（{event_id}）：开始下载：{url}，这是第 {index} 个下载任务，总共 {total_tasks} 个任务。")
+
+    elif event_type == 'start':  # 整体下载开始事件
+        print(f"\n{event_showname}（{event_id}）：开始下载")
+
+    elif event_type == 'endOne':  # 单个文件下载完成事件
+        url: str = msg_dict.get('URL', '')  # 下载URL地址
+        task_id: str = event_dict.get('ID', '')  # 任务标识符（从 event 获取）
+        index: int = msg_dict.get('Index', 0)  # 任务索引编号
+        total_tasks: int = msg_dict.get('Total', 0)  # 总任务数量
+        print(f"\n{event_showname}（{event_id}）：下载完成：{url}，这是第 {index} 个下载任务，总共 {total_tasks} 个任务。")
+
+    elif event_type == 'end':  # 整体下载结束事件
+        print(f"\n{event_showname}（{event_id}）：下载完成或已被取消")
+
+    elif event_type == 'msg':  # 消息类型事件
+        text: str = msg_dict.get('Text', '')  # 消息文本内容
+        # 检查是否包含错误信息（0.5.0 版本兼容）
+        if text and ('错误' in text or 'Error' in text or '失败' in text):
+            print(f"\n{event_showname}（{event_id}）：错误: {text}")
+        else:
+            print(f"\n{event_showname}（{event_id}）：{text}")
+
+    elif event_type == 'err':  # 错误事件
+        error: str = msg_dict.get('Error', '')  # 错误消息内容
+        print(f"\n{event_showname}（{event_id}）：错误: {error}")
+
 # 检查更新函数
 def check_for_updates() -> Dict[str, Any]:
     """检查是否有新版本可用"""
@@ -138,39 +193,66 @@ def check_for_updates() -> Dict[str, Any]:
         # 临时文件路径
         version_file = TEMP_DIR / 'aichat.txt'
         
-        # 使用Python标准库下载版本文件
-        import urllib.request
-        import ssl
-        
-        # 忽略SSL证书验证（仅用于版本检查）
-        context = ssl._create_unverified_context()
-        
-        # 下载文件
-        with urllib.request.urlopen(VERSION_URL, context=context) as response:
-            with open(version_file, 'wb') as f:
-                f.write(response.read())
+        # 使用TTHSD下载器下载版本文件
+        with TTHSDownloader() as dl:
+            # 下载版本文件
+            dl.start_download(
+                urls=[VERSION_URL],
+                save_paths=[str(version_file)],
+                thread_count=8,
+                chunk_size_mb=1,
+                callback=callback_func
+            )
+            
+            # 等待下载完成（简单实现，实际应该使用回调）
+            time.sleep(2)
         
         # 读取版本文件
         if not version_file.exists():
             print(f"版本文件不存在: {version_file}")
-            return {
-                'current_version': APP_VERSION,
-                'latest_version': None,
-                'update_available': False,
-                'error': '无法下载版本文件'
-            }
+            # 尝试使用Python标准库下载（忽略SSL证书验证）
+            try:
+                import urllib.request
+                import ssl
+                
+                # 忽略SSL证书验证（仅用于版本检查）
+                context = ssl._create_unverified_context()
+                
+                # 下载文件
+                with urllib.request.urlopen(VERSION_URL, context=context) as response:
+                    with open(version_file, 'wb') as f:
+                        f.write(response.read())
+                
+                if not version_file.exists():
+                    return {
+                        'current_version': APP_VERSION,
+                        'latest_version': None,
+                        'update_available': False,
+                        'error': '无法下载版本文件'
+                    }
+            except Exception as e:
+                print(f"备用下载方法也失败: {e}")
+                return {
+                    'current_version': APP_VERSION,
+                    'latest_version': None,
+                    'update_available': False,
+                    'error': f'无法下载版本文件: {str(e)}'
+                }
         
         with open(version_file, 'r', encoding='utf-8') as f:
             latest_version = f.read().strip()
         
         print(f"当前版本: {APP_VERSION}")
         print(f"最新版本: {latest_version}")
+        print(f"版本文件内容: '{latest_version}'")
+        print(f"版本文件长度: {len(latest_version)}")
         
         # 比较版本
         current_version = APP_VERSION
         is_update_available = compare_versions(latest_version, current_version)
         
         print(f"是否有更新: {is_update_available}")
+        print(f"版本比较结果: compare_versions('{latest_version}', '{current_version}') = {is_update_available}")
         
         return {
             'current_version': current_version,
@@ -179,12 +261,57 @@ def check_for_updates() -> Dict[str, Any]:
         }
     except Exception as e:
         print(f"检查更新失败: {e}")
-        return {
-            'current_version': APP_VERSION,
-            'latest_version': None,
-            'update_available': False,
-            'error': str(e)
-        }
+        # 尝试使用Python标准库下载（忽略SSL证书验证）
+        try:
+            # 临时文件路径
+            version_file = TEMP_DIR / 'aichat.txt'
+            
+            import urllib.request
+            import ssl
+            
+            # 忽略SSL证书验证（仅用于版本检查）
+            context = ssl._create_unverified_context()
+            
+            # 下载文件
+            with urllib.request.urlopen(VERSION_URL, context=context) as response:
+                with open(version_file, 'wb') as f:
+                    f.write(response.read())
+            
+            # 读取版本文件
+            if not version_file.exists():
+                return {
+                    'current_version': APP_VERSION,
+                    'latest_version': None,
+                    'update_available': False,
+                    'error': '无法下载版本文件'
+                }
+            
+            with open(version_file, 'r', encoding='utf-8') as f:
+                latest_version = f.read().strip()
+            
+            print(f"当前版本: {APP_VERSION}")
+            print(f"最新版本: {latest_version}")
+            
+            # 比较版本
+            current_version = APP_VERSION
+            is_update_available = compare_versions(latest_version, current_version)
+            
+            print(f"是否有更新: {is_update_available}")
+            
+            return {
+                'current_version': current_version,
+                'latest_version': latest_version,
+                'update_available': is_update_available
+            }
+        except Exception as e2:
+            print(f"备用下载方法也失败: {e2}")
+            return {
+                'current_version': APP_VERSION,
+                'latest_version': None,
+                'update_available': False,
+                'error': f'检查更新失败: {str(e)}\n备用方法也失败: {str(e2)}'
+            }
+
 
 def compare_versions(version1: str, version2: str) -> bool:
     """比较两个版本号，返回version1是否大于version2"""
@@ -383,7 +510,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <!-- 标题和新建对话按钮 -->
             <div class="p-4 border-b border-gray-200">
                 <h1 class="text-xl font-bold text-gray-800">AI-Chat2</h1>
-                <p class="text-sm text-gray-500">v2.0.0</p>
+                <p class="text-sm text-gray-500">v2.0.1</p>
             </div>
             <div class="p-4">
                 <button id="new-conversation" class="w-full bg-primary text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center">
@@ -591,16 +718,17 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="space-y-4 text-gray-600">
                 <div class="flex flex-col items-center">
                     <h2 class="text-2xl font-bold text-primary mb-2">AI-Chat2</h2>
-                    <p class="text-sm text-gray-500">版本 2.0.0</p>
+                    <p class="text-sm text-gray-500">版本 2.0.1</p>
                 </div>
                 <hr class="border-gray-200">
-                <p class="text-center">智能对话聊天程序</p>
+                <p class="text-center">人工智能对话聊天程序</p>
                 <p class="text-center text-sm text-gray-500">基于pywebview和Flask构建</p>
                 <hr class="border-gray-200">
                 <p class="text-sm">© 2026 小辉辉b. 保留所有权利。</p>
+                <p class="text-sm"><a href="https://github.com/xiaohuihuib/AI-Chat2" target="_blank" class="text-blue-500 hover:underline">AI-Chat2 项目链接</a></p>
                 <p class="text-sm">本程序使用OpenAI API进行智能对话。</p>
                 <p class="text-sm">本程序使用了23XRStudio的TTHSD高速下载器作为获取更新相关信息。</p>
-                <p class="text-sm"><a href="https://github.com/TTHSDownloader" target="_blank" class="text-blue-500 hover:underline">TTHSD项目链接</a></p>
+                <p class="text-sm"><a href="https://github.com/TTHSDownloader" target="_blank" class="text-blue-500 hover:underline">TTHSD 组织链接</a></p>
                 <p class="text-sm">如果没有API接口，可从啸AI公益服务站获取API接口。</p>
             </div>
             <button id="close-about-btn" class="w-full mt-4 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
@@ -618,6 +746,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         // 初始化
         function init() {
+            console.log('开始初始化应用');
             // 加载配置
             loadConfig();
             
@@ -631,6 +760,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             bindEvents();
             
             // 自动检测更新
+            console.log('调用checkUpdateOnLoad');
             checkUpdateOnLoad();
         }
         
@@ -1135,10 +1265,57 @@ HTML_CONTENT = '''<!DOCTYPE html>
         
         // 应用加载完成后自动检测更新
         function checkUpdateOnLoad() {
-            fetch('/api/check-update').then(response => response.json()).then(data => {
+            console.log('开始自动检测更新');
+            fetch('/api/check-update').then(response => {
+                console.log('更新检查响应状态:', response.status);
+                return response.json();
+            }).then(data => {
+                console.log('更新检查结果:', data);
                 // 只有在检测到更新时才显示通知
                 if (data.update_available) {
-                    alert(`发现新版本 ${data.latest_version}\n当前版本 ${data.current_version}\n请前往官网下载更新`);
+                    console.log('发现更新，显示通知');
+                    // 创建更新通知元素
+                    const notification = document.createElement('div');
+                    notification.style.position = 'fixed';
+                    notification.style.top = '20px';
+                    notification.style.right = '20px';
+                    notification.style.backgroundColor = '#FEF3C7';
+                    notification.style.borderLeft = '4px solid #FBBF24';
+                    notification.style.color = '#92400E';
+                    notification.style.padding = '16px';
+                    notification.style.borderRadius = '8px';
+                    notification.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                    notification.style.zIndex = '9999';
+                    notification.style.maxWidth = '300px';
+                    notification.innerHTML = `
+                        <div style="display: flex; align-items: center;">
+                            <div style="flex-shrink: 0; margin-right: 12px;">
+                                <i class="fa fa-bell" style="color: #F59E0B; font-size: 20px;"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0;">发现新版本</p>
+                                <p style="font-size: 14px; margin: 4px 0;">当前版本: ${data.current_version}</p>
+                                <p style="font-size: 14px; margin: 4px 0;">最新版本: ${data.latest_version}</p>
+                                <p style="font-size: 14px; margin: 8px 0 0 0;">请前往官网下载更新</p>
+                            </div>
+                            <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: #F59E0B; cursor: pointer;">
+                                <i class="fa fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                    
+                    // 添加到页面
+                    console.log('添加通知到页面');
+                    document.body.appendChild(notification);
+                    console.log('通知添加成功');
+                    
+                    // 5秒后自动关闭
+                    setTimeout(() => {
+                        console.log('自动关闭通知');
+                        notification.remove();
+                    }, 5000);
+                } else {
+                    console.log('没有发现更新');
                 }
             }).catch(error => {
                 // 自动检测更新失败时不显示错误信息，避免打扰用户

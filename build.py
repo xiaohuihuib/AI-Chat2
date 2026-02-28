@@ -26,6 +26,19 @@ PACK_COMMAND = [
     "--windowed",  # 无控制台窗口
     f"--icon={ICON_FILE}",  # 指定图标文件
     f"--distpath={OUTPUT_DIR}",  # 指定输出目录
+    "--name=AI-Chat2",  # 设置应用程序名称
+    "--exclude-module=matplotlib",  # 排除不需要的模块
+    "--exclude-module=numpy",  # 排除不需要的模块
+    "--exclude-module=pandas",  # 排除不需要的模块
+    "--exclude-module=scipy",  # 排除不需要的模块
+    "--exclude-module=pyqt6",  # 排除不需要的模块
+    "--exclude-module=psycopg2",  # 排除不需要的模块
+    "--exclude-module=sqlalchemy",  # 排除不需要的模块
+    "--exclude-module=pygments",  # 排除不需要的模块
+    "--exclude-module=cefpython3",  # 排除不需要的模块
+    "--exclude-module=test",  # 排除测试模块
+    "--exclude-module=tests",  # 排除测试模块
+    "--exclude-module=tkinter",  # 排除不需要的模块
     MAIN_SCRIPT  # 主脚本文件
 ]
 
@@ -57,7 +70,7 @@ def main():
         
         if result.returncode == 0:
             print("\n打包成功！")
-            print(f"可执行文件位置: {os.path.join(OUTPUT_DIR, os.path.splitext(MAIN_SCRIPT)[0] + '.exe')}")
+            print(f"可执行文件位置: {os.path.join(OUTPUT_DIR, 'AI-Chat2.exe')}")
         else:
             print("\n打包失败！")
             print(f"返回码: {result.returncode}")
