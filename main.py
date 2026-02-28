@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Chat2 - 智能对话聊天程序
-版本: 2.0.2
+版本: 2.0.3
 功能: 基于pywebview和Flask的单文件可执行聊天应用
 """
 import os
@@ -24,7 +24,7 @@ print(f"Python路径: {sys.path}")
 print(f"当前目录: {os.getcwd()}")
 
 # 应用配置
-APP_VERSION = "2.0.2"
+APP_VERSION = "2.0.3"
 APP_NAME = "AI-Chat2"
 
 # 数据目录设置
@@ -512,7 +512,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <!-- 标题和新建对话按钮 -->
             <div class="p-4 border-b border-gray-200">
                 <h1 class="text-xl font-bold text-gray-800">AI-Chat2</h1>
-                <p class="text-sm text-gray-500">v2.0.2</p>
+                <p class="text-sm text-gray-500">v2.0.3</p>
             </div>
             <div class="p-4">
                 <button id="new-conversation" class="w-full bg-primary text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center">
@@ -717,8 +717,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="space-y-4 text-gray-600">
                 <div class="flex flex-col items-center">
                     <h2 class="text-2xl font-bold text-primary mb-2">AI-Chat2</h2>
-                    <p class="text-sm text-gray-500">版本 2.0.2</p>
-                    <p class="text-sm text-gray-500">TTHSD内核版本 0.1.0-dev.1</p>
+                    <p class="text-sm text-gray-500">版本 2.0.3</p>
+                    <p class="text-sm text-gray-500">TTHSD内核版本 0.1.0-dev.2</p>
                 </div>
                 <hr class="border-gray-200">
                 <p class="text-center">人工智能对话聊天程序</p>
