@@ -16,12 +16,10 @@ TTHSD_interface.py - TT 高速下载器 Python 接口封装
 import ctypes
 import json
 import logging
-import os
 import platform
 import queue
 import sys
-import threading
-import weakref
+import uuid
 from pathlib import Path
 from collections.abc import Callable
 
@@ -43,7 +41,7 @@ try:
     _file_handler = logging.FileHandler(str(_log_file_path), mode="a", encoding="utf-8")
     _file_handler.setFormatter(logging.Formatter("[%(asctime)s][%(levelname)s] %(message)s"))
     _logger.addHandler(_file_handler)
-except Exception:
+except (OSError, IOError):
     pass  # 忽略日志文件写入失败
 
 
@@ -60,10 +58,9 @@ def _default_dll_name() -> str:
     system = platform.system()
     if system == "Windows":
         return "tthsd.dll"
-    elif system == "Darwin":
+    if system == "Darwin":
         return "tthsd.dylib"
-    else:
-        return "tthsd.so"
+    return "tthsd.so"
 
 
 def _build_tasks_json(
@@ -88,8 +85,6 @@ def _build_tasks_json(
         raise ValueError(
             f"urls 与 save_paths 长度不一致: {len(urls)} vs {len(save_paths)}"
         )
-
-    import uuid
 
     tasks = []
     for i, (url, save_path) in enumerate(zip(urls, save_paths)):
@@ -150,12 +145,13 @@ class TTHSDownloader:
                 "位于执行目录，或通过 dll_path 参数显式指定路径。"
             )
 
-        _logger.info(f"加载动态库: {dll_path}")
+        _logger.info("加载动态库: %s", dll_path)
         self._dll = ctypes.CDLL(str(dll_path))
         self._setup_dll_signatures()
 
         # 保存回调函数的 C 可调用对象，防止被 GC 回收导致崩溃
-        self._callback_refs: dict[int, ctypes.CFUNCTYPE] = {} # pyright: ignore[reportGeneralTypeIssues]
+        self._callback_refs: dict[int, ctypes.CFUNCTYPE] = {} \
+            # pyright: ignore[reportGeneralTypeIssues]
 
     # ------------------------------------------------------------------
     # DLL 函数签名配置
@@ -240,7 +236,7 @@ class TTHSDownloader:
                         event_str = event_ptr.decode("utf-8")
                 else:
                     event_str = "{}"
-                
+
                 # 处理msg_ptr
                 if msg_ptr:
                     if hasattr(msg_ptr, 'value'):
@@ -251,19 +247,20 @@ class TTHSDownloader:
                         msg_str = msg_ptr.decode("utf-8")
                 else:
                     msg_str = "{}"
-                
+
                 event_dict = json.loads(event_str)
                 msg_dict = json.loads(msg_str)
                 user_callback(event_dict, msg_dict)
-            except Exception as exc:
-                _logger.error(f"回调函数异常 (已捕获，不影响下载): {exc}", exc_info=True)
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                _logger.error("回调函数异常 (已捕获，不影响下载): %s", exc, exc_info=True)
 
         c_cb = _CALLBACK_TYPE(_inner)
         # 用 id(user_callback) 作为键，避免同一 callback 重复保存多份引用
         self._callback_refs[id(c_cb)] = c_cb
         return c_cb
 
-    def _release_c_callback(self, c_cb: ctypes.CFUNCTYPE): # pyright: ignore[reportGeneralTypeIssues]
+    def _release_c_callback(self, c_cb: ctypes.CFUNCTYPE): \
+        # pyright: ignore[reportGeneralTypeIssues]
         """释放已不再需要的 C 回调引用。"""
         key = id(c_cb)
         self._callback_refs.pop(key, None)
@@ -317,7 +314,6 @@ class TTHSDownloader:
         ua_bytes = user_agent.encode("utf-8") if user_agent else None
         rc_url_bytes = remote_callback_url.encode("utf-8") if remote_callback_url else None
 
-        use_socket_val = None
         if use_socket is not None:
             _use_socket_c = ctypes.c_bool(use_socket)
             use_socket_ptr = ctypes.cast(ctypes.byref(_use_socket_c), ctypes.c_void_p)
@@ -339,7 +335,7 @@ class TTHSDownloader:
         if dl_id == -1:
             _logger.error("getDownloader 返回 -1，创建下载器实例失败")
         else:
-            _logger.info(f"下载器已创建 (ID={dl_id})，共 {task_count} 个任务")
+            _logger.info("下载器已创建 (ID=%s)，共 %d 个任务", dl_id, task_count)
 
         return int(dl_id)
 
@@ -419,8 +415,8 @@ class TTHSDownloader:
             _logger.error("startDownload 返回 -1，创建/启动下载器失败")
         else:
             _logger.info(
-                f"下载器已创建并启动 (ID={dl_id})，共 {task_count} 个任务，"
-                f"模式={'并行' if is_multiple else '顺序'}"
+                "下载器已创建并启动 (ID=%s)，共 %d 个任务，模式=%s",
+                dl_id, task_count, '并行' if is_multiple else '顺序'
             )
 
         return int(dl_id)
@@ -437,7 +433,7 @@ class TTHSDownloader:
         """
         ret = self._dll.start_download_id(ctypes.c_int(downloader_id))
         if ret != 0:
-            _logger.warning(f"start_download_id(id={downloader_id}) 返回 {ret}（失败）")
+            _logger.warning("start_download_id(id=%s) 返回 %s（失败）", downloader_id, ret)
         return ret == 0
 
     def start_multiple_downloads_by_id(self, downloader_id: int) -> bool:
@@ -452,7 +448,7 @@ class TTHSDownloader:
         """
         ret = self._dll.start_multiple_downloads_id(ctypes.c_int(downloader_id))
         if ret != 0:
-            _logger.warning(f"start_multiple_downloads_id(id={downloader_id}) 返回 {ret}（失败）")
+            _logger.warning("start_multiple_downloads_id(id=%s) 返回 %s（失败）", downloader_id, ret)
         return ret == 0
 
     def pause_download(self, downloader_id: int) -> bool:
@@ -470,7 +466,7 @@ class TTHSDownloader:
         """
         ret = self._dll.pause_download(ctypes.c_int(downloader_id))
         if ret != 0:
-            _logger.warning(f"pause_download(id={downloader_id}) 返回 {ret}（失败，ID 可能不存在）")
+            _logger.warning("pause_download(id=%s) 返回 %s（失败，ID 可能不存在）", downloader_id, ret)
         return ret == 0
 
     def resume_download(self, downloader_id: int) -> bool:
@@ -487,7 +483,7 @@ class TTHSDownloader:
         """
         ret = self._dll.resume_download(ctypes.c_int(downloader_id))
         if ret != 0:
-            _logger.warning(f"resume_download(id={downloader_id}) 返回 {ret}（失败）")
+            _logger.warning("resume_download(id=%s) 返回 %s（失败）", downloader_id, ret)
         return ret == 0
 
     def stop_download(self, downloader_id: int) -> bool:
@@ -502,7 +498,7 @@ class TTHSDownloader:
         """
         ret = self._dll.stop_download(ctypes.c_int(downloader_id))
         if ret != 0:
-            _logger.warning(f"stop_download(id={downloader_id}) 返回 {ret}（失败）")
+            _logger.warning("stop_download(id=%s) 返回 %s（失败）", downloader_id, ret)
         return ret == 0
 
     def close(self):
@@ -527,7 +523,7 @@ class TTHSDownloader:
     def __del__(self):
         try:
             self._callback_refs.clear()
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
 

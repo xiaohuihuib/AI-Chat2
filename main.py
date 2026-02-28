@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Chat2 - 智能对话聊天程序
-版本: 2.0.1
+版本: 2.0.2
 功能: 基于pywebview和Flask的单文件可执行聊天应用
 """
 import os
@@ -11,19 +11,20 @@ import time
 import sys
 from pathlib import Path
 from typing import Dict, Any, Literal, TypedDict
+import urllib.request
+import ssl
+from flask import Flask, request, jsonify
+import webview
+from openai import OpenAI
+from openai import OpenAIError, RateLimitError, AuthenticationError
+from TTHSD_interface import TTHSDownloader
 
 # 打印Python路径
 print(f"Python路径: {sys.path}")
 print(f"当前目录: {os.getcwd()}")
 
-# 导入必要的库
-from flask import Flask, request, jsonify
-import webview
-from openai import OpenAI
-from openai import OpenAIError, RateLimitError, AuthenticationError
-
 # 应用配置
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 APP_NAME = "AI-Chat2"
 
 # 数据目录设置
@@ -56,9 +57,6 @@ DEFAULT_CONFIG = {
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'supersecretkey'
 
-#在程序初始化完成后导入TTHSD接口
-from TTHSD_interface import TTHSDownloader
-
 # 版本检查URL
 VERSION_URL = "https://raw.githubusercontent.com/xiaohuihuib/AI-Chat2/refs/heads/main/aichat.txt"
 
@@ -77,12 +75,12 @@ def load_config() -> Dict[str, Any]:
             return DEFAULT_CONFIG.copy()
     return DEFAULT_CONFIG.copy()
 
-def save_config(config: Dict[str, Any]) -> None:
+def save_config(new_config: Dict[str, Any]) -> None:
     """保存配置"""
     try:
         print(f"保存配置到: {CONFIG_FILE}")
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
+            json.dump(new_config, f, ensure_ascii=False, indent=2)
         print(f"配置保存成功: {CONFIG_FILE.exists()}")
     except OSError as e:
         print(f"保存配置失败: {e}")
@@ -133,15 +131,16 @@ conversation_titles = conversation_data['conversation_titles']
 
 # 事件字典类型定义
 class Event(TypedDict):
+    """事件字典类型定义"""
     Type: Literal['start', 'startOne', 'update', 'end', 'endOne', 'msg', 'err']
     Name: str
     ShowName: str
     ID: str
 
 def callback_func(event_dict: Event, msg_dict: dict[str, str | int | float]):
-    # 处理不同类型的事件消息
-    event_type: Literal['start', 'startOne', 'update', 'end', 'endOne', 'msg', 'err'] = event_dict.get('Type', '')
-    event_name: str = event_dict.get('Name', '')  # 事件名称
+    """处理TTHSD下载器的事件消息"""
+    event_type: Literal['start', 'startOne', 'update', 'end', 'endOne', 'msg', 'err'] = \
+        event_dict.get('Type', '')
     event_showname: str = event_dict.get('ShowName', '')  # 事件显示名称
     event_id: str = event_dict.get('ID', '')  # 事件会话/实例ID
     if event_type == 'update':  # 更新类型事件
@@ -152,24 +151,31 @@ def callback_func(event_dict: Event, msg_dict: dict[str, str | int | float]):
         # 注意：Speed 字段已在 TTHSD 内核中移除，需自行计算
         if total > 0:
             percent = (downloaded / total) * 100
-            print(f"{event_showname}（{event_id}）：{downloaded}/{total} 字节 ({percent:.2f}%)", end='\r', flush=True)
+            print(
+                f"{event_showname}（{event_id}）：{downloaded}/{total} 字节 ({percent:.2f}%)",
+                end='\r', flush=True
+            )
 
     elif event_type == 'startOne':  # 单个文件开始下载事件
         url: str = msg_dict.get('URL', '')  # 下载URL地址
-        task_id: str = event_dict.get('ID', '')  # 任务标识符（从 event 获取）
-        index: int = msg_dict.get('Index', 0)  # 任务索引编号
+        task_index: int = msg_dict.get('Index', 0)  # 任务索引编号
         total_tasks: int = msg_dict.get('Total', 0)  # 总任务数量
-        print(f"\n{event_showname}（{event_id}）：开始下载：{url}，这是第 {index} 个下载任务，总共 {total_tasks} 个任务。")
+        print(
+            f"\n{event_showname}（{event_id}）：开始下载：{url}，"
+            f"这是第 {task_index} 个下载任务，总共 {total_tasks} 个任务。"
+        )
 
     elif event_type == 'start':  # 整体下载开始事件
         print(f"\n{event_showname}（{event_id}）：开始下载")
 
     elif event_type == 'endOne':  # 单个文件下载完成事件
         url: str = msg_dict.get('URL', '')  # 下载URL地址
-        task_id: str = event_dict.get('ID', '')  # 任务标识符（从 event 获取）
-        index: int = msg_dict.get('Index', 0)  # 任务索引编号
+        task_index: int = msg_dict.get('Index', 0)  # 任务索引编号
         total_tasks: int = msg_dict.get('Total', 0)  # 总任务数量
-        print(f"\n{event_showname}（{event_id}）：下载完成：{url}，这是第 {index} 个下载任务，总共 {total_tasks} 个任务。")
+        print(
+            f"\n{event_showname}（{event_id}）：下载完成：{url}，"
+            f"这是第 {task_index} 个下载任务，总共 {total_tasks} 个任务。"
+        )
 
     elif event_type == 'end':  # 整体下载结束事件
         print(f"\n{event_showname}（{event_id}）：下载完成或已被取消")
@@ -192,7 +198,7 @@ def check_for_updates() -> Dict[str, Any]:
     try:
         # 临时文件路径
         version_file = TEMP_DIR / 'aichat.txt'
-        
+
         # 使用TTHSD下载器下载版本文件
         with TTHSDownloader() as dl:
             # 下载版本文件
@@ -203,26 +209,23 @@ def check_for_updates() -> Dict[str, Any]:
                 chunk_size_mb=1,
                 callback=callback_func
             )
-            
+
             # 等待下载完成（简单实现，实际应该使用回调）
             time.sleep(2)
-        
+
         # 读取版本文件
         if not version_file.exists():
             print(f"版本文件不存在: {version_file}")
             # 尝试使用Python标准库下载（忽略SSL证书验证）
             try:
-                import urllib.request
-                import ssl
-                
                 # 忽略SSL证书验证（仅用于版本检查）
                 context = ssl._create_unverified_context()
-                
+
                 # 下载文件
                 with urllib.request.urlopen(VERSION_URL, context=context) as response:
                     with open(version_file, 'wb') as f:
                         f.write(response.read())
-                
+
                 if not version_file.exists():
                     return {
                         'current_version': APP_VERSION,
@@ -230,7 +233,7 @@ def check_for_updates() -> Dict[str, Any]:
                         'update_available': False,
                         'error': '无法下载版本文件'
                     }
-            except Exception as e:
+            except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
                 print(f"备用下载方法也失败: {e}")
                 return {
                     'current_version': APP_VERSION,
@@ -238,45 +241,45 @@ def check_for_updates() -> Dict[str, Any]:
                     'update_available': False,
                     'error': f'无法下载版本文件: {str(e)}'
                 }
-        
+
         with open(version_file, 'r', encoding='utf-8') as f:
             latest_version = f.read().strip()
-        
+
         print(f"当前版本: {APP_VERSION}")
         print(f"最新版本: {latest_version}")
         print(f"版本文件内容: '{latest_version}'")
         print(f"版本文件长度: {len(latest_version)}")
-        
+
         # 比较版本
         current_version = APP_VERSION
         is_update_available = compare_versions(latest_version, current_version)
-        
+
         print(f"是否有更新: {is_update_available}")
-        print(f"版本比较结果: compare_versions('{latest_version}', '{current_version}') = {is_update_available}")
-        
+        print(
+            f"版本比较结果: compare_versions('{latest_version}', '{current_version}') "
+            f"= {is_update_available}"
+        )
+
         return {
             'current_version': current_version,
             'latest_version': latest_version,
             'update_available': is_update_available
         }
-    except Exception as e:
+    except (OSError, json.JSONDecodeError) as e:
         print(f"检查更新失败: {e}")
         # 尝试使用Python标准库下载（忽略SSL证书验证）
         try:
             # 临时文件路径
             version_file = TEMP_DIR / 'aichat.txt'
-            
-            import urllib.request
-            import ssl
-            
+
             # 忽略SSL证书验证（仅用于版本检查）
             context = ssl._create_unverified_context()
-            
+
             # 下载文件
             with urllib.request.urlopen(VERSION_URL, context=context) as response:
                 with open(version_file, 'wb') as f:
                     f.write(response.read())
-            
+
             # 读取版本文件
             if not version_file.exists():
                 return {
@@ -285,25 +288,25 @@ def check_for_updates() -> Dict[str, Any]:
                     'update_available': False,
                     'error': '无法下载版本文件'
                 }
-            
+
             with open(version_file, 'r', encoding='utf-8') as f:
                 latest_version = f.read().strip()
-            
+
             print(f"当前版本: {APP_VERSION}")
             print(f"最新版本: {latest_version}")
-            
+
             # 比较版本
             current_version = APP_VERSION
             is_update_available = compare_versions(latest_version, current_version)
-            
+
             print(f"是否有更新: {is_update_available}")
-            
+
             return {
                 'current_version': current_version,
                 'latest_version': latest_version,
                 'update_available': is_update_available
             }
-        except Exception as e2:
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e2:
             print(f"备用下载方法也失败: {e2}")
             return {
                 'current_version': APP_VERSION,
@@ -318,19 +321,19 @@ def compare_versions(version1: str, version2: str) -> bool:
     try:
         v1_parts = list(map(int, version1.split('.')))
         v2_parts = list(map(int, version2.split('.')))
-        
+
         # 确保版本号部分长度相同
         max_length = max(len(v1_parts), len(v2_parts))
         v1_parts.extend([0] * (max_length - len(v1_parts)))
         v2_parts.extend([0] * (max_length - len(v2_parts)))
-        
+
         for v1, v2 in zip(v1_parts, v2_parts):
             if v1 > v2:
                 return True
             if v1 < v2:
                 return False
         return False
-    except:
+    except (ValueError, AttributeError):
         return False
 
 # 确保默认对话存在
@@ -388,9 +391,9 @@ def api_conversations():
             'conversation_titles': conversation_titles
         })
         # 重新加载数据以确保一致性
-        conversation_data = load_conversations()
-        conversations = conversation_data['conversations']
-        conversation_titles = conversation_data['conversation_titles']
+        loaded_conversation_data = load_conversations()
+        conversations = loaded_conversation_data['conversations']
+        conversation_titles = loaded_conversation_data['conversation_titles']
     return jsonify({"status": "success"})
 
 @app.route('/api/message', methods=['POST'])
@@ -476,7 +479,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     colors: {
                         primary: '#3B82F6',
                         secondary: '#10B981',
-                        dark: '#1F2937',
                         light: '#F3F4F6',
                         'user-bubble': '#DCF8C6',
                         'ai-bubble': '#FFFFFF'
@@ -510,7 +512,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <!-- 标题和新建对话按钮 -->
             <div class="p-4 border-b border-gray-200">
                 <h1 class="text-xl font-bold text-gray-800">AI-Chat2</h1>
-                <p class="text-sm text-gray-500">v2.0.1</p>
+                <p class="text-sm text-gray-500">v2.0.2</p>
             </div>
             <div class="p-4">
                 <button id="new-conversation" class="w-full bg-primary text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center">
@@ -539,9 +541,6 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
                 <h2 id="conversation-title" class="text-lg font-semibold text-gray-800">新对话</h2>
                 <div class="flex space-x-2">
-                    <button id="theme-toggle" class="p-2 text-gray-600 hover:bg-gray-100 rounded-full">
-                        <i class="fa fa-moon-o"></i>
-                    </button>
                     <button id="help-btn" class="p-2 text-gray-600 hover:bg-gray-100 rounded-full">
                         <i class="fa fa-question-circle"></i>
                     </button>
@@ -718,7 +717,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="space-y-4 text-gray-600">
                 <div class="flex flex-col items-center">
                     <h2 class="text-2xl font-bold text-primary mb-2">AI-Chat2</h2>
-                    <p class="text-sm text-gray-500">版本 2.0.1</p>
+                    <p class="text-sm text-gray-500">版本 2.0.2</p>
+                    <p class="text-sm text-gray-500">TTHSD内核版本 0.1.0-dev.1</p>
                 </div>
                 <hr class="border-gray-200">
                 <p class="text-center">人工智能对话聊天程序</p>
@@ -726,7 +726,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <hr class="border-gray-200">
                 <p class="text-sm">© 2026 小辉辉b. 保留所有权利。</p>
                 <p class="text-sm"><a href="https://github.com/xiaohuihuib/AI-Chat2" target="_blank" class="text-blue-500 hover:underline">AI-Chat2 项目链接</a></p>
-                <p class="text-sm">本程序使用OpenAI API进行智能对话。</p>
+                <p class="text-sm">本程序使用OpenAI API进行人工智能对话。</p>
                 <p class="text-sm">本程序使用了23XRStudio的TTHSD高速下载器作为获取更新相关信息。</p>
                 <p class="text-sm"><a href="https://github.com/TTHSDownloader" target="_blank" class="text-blue-500 hover:underline">TTHSD 组织链接</a></p>
                 <p class="text-sm">如果没有API接口，可从啸AI公益服务站获取API接口。</p>
@@ -1141,17 +1141,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 document.getElementById('error-modal').classList.add('hidden');
             });
             
-            // 主题切换
-            document.getElementById('theme-toggle').addEventListener('click', function() {
-                document.body.classList.toggle('dark');
-                if (document.body.classList.contains('dark')) {
-                    document.body.classList.add('bg-gray-900', 'text-white');
-                    document.body.classList.remove('bg-gray-100', 'text-gray-800');
-                } else {
-                    document.body.classList.remove('bg-gray-900', 'text-white');
-                    document.body.classList.add('bg-gray-100', 'text-gray-800');
-                }
-            });
+
             
             // 添加自定义模型
             document.getElementById('add-model-btn').addEventListener('click', function() {

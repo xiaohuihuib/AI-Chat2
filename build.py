@@ -50,31 +50,32 @@ def main():
     print(f"图标文件: {ICON_FILE}")
     print(f"输出目录: {OUTPUT_DIR}")
     print(f"打包命令: {' '.join(PACK_COMMAND)}")
-    
+
     try:
         # 执行打包命令
         result = subprocess.run(
             PACK_COMMAND,
             cwd=PROJECT_ROOT,
             capture_output=True,
-            text=True
+            text=True,
+            check=False
         )
-        
+
         # 输出打包过程
         print("\n打包过程输出:")
         print(result.stdout)
-        
+
         if result.stderr:
             print("\n错误输出:")
             print(result.stderr)
-        
+
         if result.returncode == 0:
             print("\n打包成功！")
             print(f"可执行文件位置: {os.path.join(OUTPUT_DIR, 'AI-Chat2.exe')}")
         else:
             print("\n打包失败！")
             print(f"返回码: {result.returncode}")
-    except Exception as e:
+    except OSError as e:
         print(f"打包过程中发生错误: {e}")
 
 if __name__ == "__main__":
