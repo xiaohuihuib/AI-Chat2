@@ -54,4 +54,4 @@ AI-Chat2：Python编写的AI聊天工具第二代！
 欢迎提交Issue和Pull Request！
 
 ## 许可证
-GNU General Public License v3.0
+GNU Affero General Public License v3.0
