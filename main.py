@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI-Chat2 - 智能对话聊天程序
-版本: 2.0.3
+版本: 2.0.4
 功能: 基于pywebview和Flask的单文件可执行聊天应用
 """
 import os
@@ -17,14 +17,14 @@ from flask import Flask, request, jsonify
 import webview
 from openai import OpenAI
 from openai import OpenAIError, RateLimitError, AuthenticationError
-from TTHSD_interface import TTHSDownloader
+from tld_interface import TLDownloader
 
 # 打印Python路径
 print(f"Python路径: {sys.path}")
 print(f"当前目录: {os.getcwd()}")
 
 # 应用配置
-APP_VERSION = "2.0.3"
+APP_VERSION = "2.0.4"
 APP_NAME = "AI-Chat2"
 
 # 数据目录设置
@@ -200,7 +200,7 @@ def check_for_updates() -> Dict[str, Any]:
         version_file = TEMP_DIR / 'aichat.txt'
 
         # 使用TTHSD下载器下载版本文件
-        with TTHSDownloader() as dl:
+        with TLDownloader() as dl:
             # 下载版本文件
             dl.start_download(
                 urls=[VERSION_URL],
@@ -512,7 +512,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <!-- 标题和新建对话按钮 -->
             <div class="p-4 border-b border-gray-200">
                 <h1 class="text-xl font-bold text-gray-800">AI-Chat2</h1>
-                <p class="text-sm text-gray-500">v2.0.3</p>
+                <p class="text-sm text-gray-500">v2.0.4</p>
             </div>
             <div class="p-4">
                 <button id="new-conversation" class="w-full bg-primary text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center">
@@ -697,7 +697,7 @@ HTML_CONTENT = '''<!DOCTYPE html>
                     <li>Enter: 发送消息</li>
                 </ul>
                 <p><strong>API配置：</strong></p>
-                <p>需要设置API密钥和API地址才能使用AI功能。如果没有API接口，可以从啸AI公益服务站获取。</p>
+                <p>需要设置API密钥和API地址才能使用AI功能。</p>
             </div>
             <button id="close-help-btn" class="w-full mt-4 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
                 确定
@@ -717,8 +717,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
             <div class="space-y-4 text-gray-600">
                 <div class="flex flex-col items-center">
                     <h2 class="text-2xl font-bold text-primary mb-2">AI-Chat2</h2>
-                    <p class="text-sm text-gray-500">版本 2.0.3</p>
-                    <p class="text-sm text-gray-500">TTHSD内核版本 0.1.0-dev.2</p>
+                    <p class="text-sm text-gray-500">版本 2.0.4</p>
+                    <p class="text-sm text-gray-500">TLD内核版本 0.1.0-dev.6</p>
                 </div>
                 <hr class="border-gray-200">
                 <p class="text-center">人工智能对话聊天程序</p>
@@ -727,9 +727,8 @@ HTML_CONTENT = '''<!DOCTYPE html>
                 <p class="text-sm">© 2026 小辉辉b. 保留所有权利。</p>
                 <p class="text-sm"><a href="https://github.com/xiaohuihuib/AI-Chat2" target="_blank" class="text-blue-500 hover:underline">AI-Chat2 项目链接</a></p>
                 <p class="text-sm">本程序使用OpenAI API进行人工智能对话。</p>
-                <p class="text-sm">本程序使用了23XRStudio的TTHSD高速下载器作为获取更新相关信息。</p>
-                <p class="text-sm"><a href="https://github.com/TTHSDownloader" target="_blank" class="text-blue-500 hover:underline">TTHSD 组织链接</a></p>
-                <p class="text-sm">如果没有API接口，可从啸AI公益服务站获取API接口。</p>
+                <p class="text-sm">本程序使用了TT23XRStudio的TaiLerDownloader高速下载器作为获取更新相关信息。</p>
+                <p class="text-sm"><a href="https://github.com/TaiLerDownloader" target="_blank" class="text-blue-500 hover:underline">TaiLerDownloader 组织链接</a></p>
             </div>
             <button id="close-about-btn" class="w-full mt-4 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
                 确定
