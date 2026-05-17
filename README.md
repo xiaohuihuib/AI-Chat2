@@ -13,7 +13,7 @@ AI-Chat2：Python编写的AI聊天工具第二代！
 - **自动检测**：程序加载完成后自动检测更新
 - **手动检查**：设置页面中提供检测更新按钮
 - **结果显示**：在网页内显示更新检查结果，包括当前版本和最新版本
-- **使用TTHSD**：使用TTHSD高速下载器获取最新版本信息
+- **使用TTHSD**：使用TaiLerDownloader高速下载器获取最新版本信息
 
 ### 界面与用户体验
 - **响应式设计**：适配不同屏幕尺寸
@@ -32,7 +32,7 @@ AI-Chat2：Python编写的AI聊天工具第二代！
 - **后端**：Python、Flask
 - **GUI**：pywebview
 - **API**：OpenAI API
-- **下载器**：TTHSD高速下载器
+- **下载器**：TaiLerDownloader高速下载器
 
 ## 快速开始
 1. 克隆项目：`git clone https://github.com/xiaohuihuib/AI-Chat2.git`
@@ -47,7 +47,6 @@ AI-Chat2：Python编写的AI聊天工具第二代！
 
 ## 注意事项
 - 本程序需要有效的OpenAI API密钥才能使用
-- 如果没有API接口，可从啸AI公益服务站获取API接口
 - 程序会自动检测更新，确保使用最新版本
 
 ## 贡献
